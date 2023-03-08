@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
 require('dotenv').config()
 
@@ -20,6 +20,25 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@clu
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
 
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).send('you are not authorized for this access');
+    }
+    const token = authHeader.split(' ')[1];
+    console.log(token)
+    jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
+        if (err) {
+            return res.status(403).send({ message: 'access is forbiden' })
+        }
+        req.decoded = decoded;
+        next();
+    })
+
+}
+
+
+
 async function run() {
 
     try {
@@ -30,17 +49,17 @@ async function run() {
 
 
         //JWT implement
-        app.get('/jwt', async(req, res)=>{
+        app.get('/jwt', async (req, res) => {
             const email = req.query.email;
-            const query = {email: email};
+            const query = { email: email };
             const user = await userCollection.findOne(query);
-            if(user){
-              const token = jwt.sign({email}, process.env.ACCESS_TOKEN, {expiresIn: '10d'})
-              return res.send({tokenForAccess: token});
+            if (user) {
+                const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, { expiresIn: '10d' })
+                return res.send({ tokenForAccess: token });
             }
-            res.status(403).send({tokenForAccess: 'congratulation you have got ghorar egg'})
-          })
-    
+            res.status(403).send({ tokenForAccess: 'congratulation you have got ghorar egg' })
+        })
+
 
         //catergory collection
         app.get('/catagory', async (req, res) => {
@@ -86,6 +105,167 @@ async function run() {
             const result = await userCollection.insertOne(userInformation);
             res.send(result);
         });
+
+
+        //admin route checking
+        app.get('/admin/:email', async (req, res) => {
+            const email = req.params.email;
+            console.log(email)
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ isAdmin: user?.role === 'Admin' })
+
+        })
+
+        //seller route checking
+        app.get('/seller/:email', async (req, res) => {
+            const email = req.params.email;
+            console.log(email)
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ isSeller: user?.role === 'Seller' })
+
+        })
+
+
+        //buyer route checking
+        app.get('/buyer/:email', async (req, res) => {
+            const email = req.params.email;
+            console.log(email)
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.send({ isBuyer: user?.role === 'Buyer' })
+
+        })
+
+
+
+        //buyer myorder data
+        app.get('/myorder', async (req, res) => {
+
+            if (req.query.email) {
+                query = {
+                    email: req.query.email
+
+                }
+            }
+
+            const cursor = bookedCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+
+        //all buyer route
+        app.get('/buyer', async (req, res) => {
+            const query = { role: 'Buyer' };
+            const buyerdetails = await userCollection.find(query).toArray();
+            res.send(buyerdetails);
+        });
+
+        //admin can delete buyer /delbuyer/${id}
+        app.delete('/delbuyer/:id', async (req, res) => {
+            const id = req.params.id;
+            console.log(id)
+            const query = { _id: new ObjectId(id) };
+            const result = await userCollection.deleteOne(query);
+            res.send(result);
+        })
+
+
+
+        //all seller route
+        app.get('/seller', async (req, res) => {
+            const query = { role: 'Seller' };
+            const sellerdetails = await userCollection.find(query).toArray();
+            res.send(sellerdetails);
+        });
+
+        //admin can delete seller /delseller/${id}
+        app.delete('/delseller/:id', async (req, res) => {
+            const id = req.params.id;
+            console.log(id)
+            const query = { _id: new ObjectId(id) };
+            const result = await userCollection.deleteOne(query);
+            res.send(result);
+        })
+
+
+        //seller verify
+        app.put('/update/:id', async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: {
+                    verification: 'Verified'
+                }
+            }
+            const result = await userCollection.updateOne(filter, updateDoc, options)
+            res.send(result);
+        })
+
+        //seller product load in database
+
+        app.post('/products', async (req, res) => {
+            const product = req.body;
+            console.log(product);
+            const result = await productsCollection.insertOne(product);
+            res.send(result);
+        });
+
+
+
+        //seller product load
+        app.get('/product', verifyJWT, async (req, res) => {
+            console.log(req.query)
+            const email = req.query.email;
+            const decodedEmail = req.decoded.seller_email;
+
+            if (email !== decodedEmail) {
+                return res.status(403).send({ message: 'access is forbiden' })
+            }
+
+            // const query ={seller_email: seller_email};
+            if (req.query.seller_email) {
+                query = {
+                    seller_email: req.query.seller_email
+
+                }
+            }
+
+            const cursor = productsCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+
+        //seller can delete their product now
+        app.delete('/delproduct/:id', async (req, res) => {
+            const id = req.params.id;
+            console.log(id)
+            const query = { _id: new ObjectId(id) };
+            const result = await productsCollection.deleteOne(query);
+            res.send(result);
+        })
+
+
+        //product advertise
+        app.put('/newrole/:id', async (req, res) => {
+            const id = req.params.id;
+            console.log('id', id)
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: {
+                    role: 'Advertise'
+                }
+            }
+            const uprole = await productsCollection.updateOne(filter, updateDoc, options)
+            res.send(uprole);
+        })
+
+
 
 
 
