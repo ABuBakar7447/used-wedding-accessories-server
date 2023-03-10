@@ -4,6 +4,7 @@ const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
 require('dotenv').config()
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -141,7 +142,14 @@ async function run() {
 
 
         //buyer myorder data
-        app.get('/myorder', async (req, res) => {
+        app.get('/myorder', verifyJWT, async (req, res) => {
+            const email = req.query.email;
+            const decodedEmail = req.decoded.email;
+
+            if (email !== decodedEmail) {
+                return res.status(403).send({ message: 'access is forbiden' })
+            }
+
 
             if (req.query.email) {
                 query = {
@@ -263,7 +271,77 @@ async function run() {
             }
             const uprole = await productsCollection.updateOne(filter, updateDoc, options)
             res.send(uprole);
+        });
+
+
+
+        //product advertise
+        app.put('/newrole/:id', async (req, res) => {
+            const id = req.params.id;
+            console.log('id', id)
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: {
+                    role: 'Advertise'
+                }
+            }
+            const uprole = await productsCollection.updateOne(filter, updateDoc, options)
+            res.send(uprole);
         })
+
+
+        //advertised data collection
+        app.get('/advertised', async (req, res) => {
+            const query = { role: 'Advertise' };
+            const sellerdetails = await productsCollection.find(query).toArray();
+            res.send(sellerdetails);
+        });
+
+
+
+        app.get('/sellerdetails', async(req,res) =>{
+            console.log(req.query.seller_email)
+            if (req.query.seller_email ){
+              query = {
+                email: req.query.seller_email
+               
+              }
+            }
+            
+            const cursor = userCollection.find(query);
+            const verify = await cursor.toArray();
+            console.log(verify)
+            res.send(verify);
+          });
+
+
+        //data collection for payment
+
+        app.get('/bookingdata/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const bookingdata = await bookedCollection.findOne(query);
+            res.send(bookingdata)
+        })
+
+        // app.post('/create-payment-intent', async (req, res) => {
+        //     const booking = req.body;
+        //     const price = booking.price;
+        //     const amount = price * 100;
+        //     const num = parseInt(amount);
+
+        //     const paymentIntent = await stripe.paymentIntents.create({
+        //         currency: 'usd',
+        //         amount: num,
+        //         "payment_method_types": [
+        //             "card"
+        //         ]
+        //     });
+        //     res.send({
+        //         clientSecret: paymentIntent.client_secret,
+        //     });
+        // });
 
 
 
